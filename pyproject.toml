@@ -1,0 +1,21 @@
+[tool.poetry]
+name = "geospatial-optimization"
+version = "0.1.0"
+description = ""
+authors = ["Timothy Wong <timothy.wong@hotmail.co.uk>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.12"
+pulp = "^3.2.1"
+shapely = "^2.1.1"
+matplotlib = "^3.10.3"
+h3 = "^4.2.2"
+
+
+[tool.poetry.group.dev.dependencies]
+ipykernel = "^6.29.5"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
