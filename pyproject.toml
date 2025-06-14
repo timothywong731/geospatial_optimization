@@ -6,11 +6,10 @@ authors = ["Timothy Wong <timothy.wong@hotmail.co.uk>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = "^3.12"
+python = ">=3.12,<3.14"
 pulp = "^3.2.1"
 shapely = "^2.1.1"
 matplotlib = "^3.10.3"
-h3 = "^4.2.2"
 
 
 [tool.poetry.group.dev.dependencies]
