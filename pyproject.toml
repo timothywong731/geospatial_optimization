@@ -4,6 +4,7 @@ version = "0.1.0"
 description = ""
 authors = ["Timothy Wong <timothy.wong@hotmail.co.uk>"]
 readme = "README.md"
+packages = [{include = "geospatial_optimization"}]
 
 [tool.poetry.dependencies]
 python = ">=3.12,<3.14"
