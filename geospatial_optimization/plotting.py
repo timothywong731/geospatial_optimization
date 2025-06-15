@@ -2,8 +2,7 @@ from typing import List, Dict
 import matplotlib.pyplot as plt
 from matplotlib.patches import Patch
 from shapely.geometry import MultiPolygon
-from mpl_toolkits.basemap import Basemap
-from mpl_toolkits.basemap import cm
+from mpl_toolkits.basemap import Basemap, cm, shiftgrid
 from netCDF4 import Dataset
 from shapely.geometry import Polygon
 from .helpers import create_fan_polygon
@@ -59,7 +58,7 @@ def plot_sensor_map(
     topoin = etopodata.variables["ROSE"][:]
     lons = etopodata.variables["ETOPO05_X"][:]
     lats = etopodata.variables["ETOPO05_Y"][:]
-    topoin, lons = Basemap.shiftgrid(180.0, topoin, lons, start=False)
+    topoin, lons = shiftgrid(180.0, topoin, lons, start=False)
     nx = int((m.xmax - m.xmin) / 10000.0) + 1
     ny = int((m.ymax - m.ymin) / 10000.0) + 1
     topodat = m.transform_scalar(topoin, lons, lats, nx, ny)

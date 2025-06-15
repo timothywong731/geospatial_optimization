@@ -13,7 +13,7 @@ def optimize_sensor_placement(
     resolution_km: float = 30,
     max_sensors: int = 99,
     coverage_requirement: float = 0.8,
-    encourage_overlapping: float = 0.5,
+    encourage_overlapping: float = 0.0,
 ) -> Tuple[str, List[Dict]]:
     """Place a subset of sensors optimally.
 
@@ -54,31 +54,40 @@ def optimize_sensor_placement(
             for i_idx, i_point in enumerate(locations):
                 if fan_poly.contains(i_point):
                     covers[i_idx, l_idx, j_idx] = 1
-
+                    
     prob = pulp.LpProblem("Sensor_Placement", pulp.LpMinimize)
     x = pulp.LpVariable.dicts("Place", (range(num_locations), range(num_configs)), cat="Binary")
     y = pulp.LpVariable.dicts("IsCovered", range(num_locations), cat="Binary")
     y_prime = pulp.LpVariable.dicts("CoveredCount", range(num_locations), cat="Integer")
 
+    # Objective: Minimize number of sensors placed, encourage overlapping coverage if specified
     prob += pulp.lpSum(x[l][j] for l in range(num_locations) for j in range(num_configs)) \
         - encourage_overlapping * pulp.lpSum(y_prime[i] - 1 for i in range(num_locations))
 
+    # Constraint: Relate overlapping coverage to covered points
     prob += pulp.lpSum(y_prime[i] for i in range(num_locations)) >= encourage_overlapping * pulp.lpSum(
         y[i] for i in range(num_locations)
     )
 
+    # Constraint: Limit overlapping count per location (example: at most 2)
     for i in range(num_locations):
         prob += y_prime[i] <= 2
 
+    # Constraint: y_prime counts how many times location i is covered, scaled by encourage_overlapping
     for i in range(num_locations):
         prob += pulp.lpSum(covers[i, l, j] * x[l][j] for l in range(num_locations) for j in range(num_configs)) >= encourage_overlapping * y_prime[i]
 
+    # Constraint: Do not exceed max_sensors
     prob += pulp.lpSum(x[l][j] for l in range(num_locations) for j in range(num_configs)) <= max_sensors
+
+    # Constraint: Meet minimum coverage requirement
     prob += pulp.lpSum(y[i] for i in range(num_locations)) >= coverage_requirement * num_locations
 
+    # Constraint: y[i] is 1 if location i is covered by any sensor
     for i in range(num_locations):
         prob += pulp.lpSum(covers[i, l, j] * x[l][j] for l in range(num_locations) for j in range(num_configs)) >= y[i]
 
+    # Constraint: At most one sensor per location
     for l in range(num_locations):
         prob += pulp.lpSum(x[l][j] for j in range(num_configs)) <= 1
 
