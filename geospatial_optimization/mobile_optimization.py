@@ -17,11 +17,13 @@ def select_scan_positions(
     resolution_km: float = 20,
     coverage_requirement: float = 0.8,
 ) -> List[Dict]:
-    """Select scan positions that cover the required area.
+    """Select scan positions that satisfy a coverage threshold.
 
-    This uses a greedy set cover approach over a grid of candidate points.
-    Each returned dictionary contains the ``location`` as a :class:`~shapely.geometry.Point`
-    and the ``config`` used to create the fan polygon.
+    A grid of candidate locations is generated over ``operational_area`` and a
+    greedy set cover routine chooses a subset whose fan-shaped detection areas
+    sweep across at least ``coverage_requirement`` of the region.  The returned
+    dictionaries contain the ``location`` as a :class:`~shapely.geometry.Point`
+    and the ``config`` describing the sensor orientation and range.
     """
     locations = get_grid_points_in_polygon_km(operational_area, resolution_km)
     coverage_points = locations
@@ -69,78 +71,92 @@ def _haversine_dist(pt1: Point, pt2: Point) -> float:
 
 def plan_sensor_routes(
     scan_points: List[Dict],
-    depot: Point,
-    num_sensors: int,
+    depots: List[Point],
+    operational_area: MultiPolygon,
 ) -> List[List[Point]]:
-    """Plan routes for ``num_sensors`` starting and ending at ``depot``.
+    """Plan a route for each depot.
 
-    The input ``scan_points`` list comes from :func:`select_scan_positions`.
-    A mixed integer program is solved with :mod:`pulp` to minimise total travel
-    distance while visiting each scan point exactly once.
+    Scan points are first assigned to the nearest depot. A travelling salesman
+    problem is then solved with :mod:`pulp` for each depot individually while
+    restricting travel to remain inside ``operational_area``.
 
     Objective
     ---------
-    Minimise the sum of travelled distances between consecutive waypoints.
+    Minimise the total travel distance for each sensor.
 
     Constraints
     -----------
-    - Each scan point has exactly one incoming and one outgoing arc.
-    - Exactly ``num_sensors`` tours leave and return to the depot.
-    - Miller--Tucker--Zemlin constraints remove sub-tours.
+    - Every assigned scan point has exactly one incoming and one outgoing arc.
+    - Routes start and end at the same depot.
+    - All path segments lie completely inside ``operational_area``.
+    - Miller--Tucker--Zemlin constraints remove sub-tours for each route.
     """
 
     import pulp
+    from shapely.geometry import LineString
 
-    points = [depot] + [s["location"] for s in scan_points]
-    n = len(points)
+    # Assign scan points to the closest depot
+    clusters: List[List[Dict]] = [[] for _ in depots]
+    for sp in scan_points:
+        distances = [_haversine_dist(sp["location"], d) for d in depots]
+        clusters[int(np.argmin(distances))].append(sp)
 
-    # Pre-compute distances in kilometres
-    dist = [[_haversine_dist(points[i], points[j]) for j in range(n)] for i in range(n)]
-
-    prob = pulp.LpProblem("MTSP", pulp.LpMinimize)
-    x = pulp.LpVariable.dicts("x", (range(n), range(n)), cat="Binary")
-    u = pulp.LpVariable.dicts("u", range(1, n), lowBound=1, upBound=n - 1, cat="Integer")
-
-    # Objective function: sum over arcs of distance * decision
-    prob += pulp.lpSum(dist[i][j] * x[i][j] for i in range(n) for j in range(n))
-
-    # Each non-depot node has exactly one incoming and one outgoing arc
-    for k in range(1, n):
-        prob += pulp.lpSum(x[i][k] for i in range(n)) == 1
-        prob += pulp.lpSum(x[k][j] for j in range(n)) == 1
-
-    # Depot has num_sensors outgoing and incoming arcs
-    prob += pulp.lpSum(x[0][j] for j in range(1, n)) == num_sensors
-    prob += pulp.lpSum(x[i][0] for i in range(1, n)) == num_sensors
-
-    # Prevent self-loops
-    for i in range(n):
-        prob += x[i][i] == 0
-
-    # MTZ sub-tour elimination
-    for i in range(1, n):
-        for j in range(1, n):
-            if i != j:
-                prob += u[i] - u[j] + (n - 1) * x[i][j] <= n - 2
-
-    solver = pulp.PULP_CBC_CMD(gapRel=0.01, timeLimit=60)
-    result_status = prob.solve(solver)
-    if pulp.LpStatus[result_status] != "Optimal":
-        raise RuntimeError("Route optimisation did not converge")
-
-    # Extract tours
     routes: List[List[Point]] = []
-    successors = {i: j for i in range(n) for j in range(n) if pulp.value(x[i][j]) == 1}
 
-    for _ in range(num_sensors):
+    for depot, assigned in zip(depots, clusters):
+        pts = [depot] + [s["location"] for s in assigned]
+        n = len(pts)
+        if n == 1:
+            routes.append([depot, depot])
+            continue
+
+        # Pre-compute distances and allowed arcs (within operational area)
+        arcs = []
+        dist = {}
+        for i in range(n):
+            for j in range(n):
+                if i == j:
+                    continue
+                segment = LineString([pts[i], pts[j]])
+                if operational_area.contains(segment):
+                    arcs.append((i, j))
+                    dist[(i, j)] = _haversine_dist(pts[i], pts[j])
+
+        prob = pulp.LpProblem("TSP", pulp.LpMinimize)
+        x = pulp.LpVariable.dicts("x", arcs, cat="Binary")
+        u = pulp.LpVariable.dicts("u", range(1, n), lowBound=1, upBound=n - 1, cat="Integer")
+
+        # Objective
+        prob += pulp.lpSum(dist[i, j] * x[i, j] for i, j in arcs)
+
+        # Degree constraints
+        for k in range(1, n):
+            prob += pulp.lpSum(x[i, j] for (i, j) in arcs if j == k) == 1
+            prob += pulp.lpSum(x[i, j] for (i, j) in arcs if i == k) == 1
+        prob += pulp.lpSum(x[0, j] for i, j in arcs if i == 0) == 1
+        prob += pulp.lpSum(x[i, 0] for i, j in arcs if j == 0) == 1
+
+        # MTZ sub-tour elimination
+        for i in range(1, n):
+            for j in range(1, n):
+                if i != j and (i, j) in arcs:
+                    prob += u[i] - u[j] + (n - 1) * x[i, j] <= n - 2
+
+        solver = pulp.PULP_CBC_CMD(gapRel=0.01, timeLimit=60)
+        result_status = prob.solve(solver)
+        if pulp.LpStatus[result_status] != "Optimal":
+            raise RuntimeError("Route optimisation did not converge")
+
+        # Extract route starting at depot index 0
+        succ = {i: j for i, j in arcs if pulp.value(x[i, j]) == 1}
         current = 0
         tour = [depot]
         while True:
-            nxt = successors[current]
+            nxt = succ[current]
             if nxt == 0:
                 tour.append(depot)
                 break
-            tour.append(points[nxt])
+            tour.append(pts[nxt])
             current = nxt
         routes.append(tour)
 
