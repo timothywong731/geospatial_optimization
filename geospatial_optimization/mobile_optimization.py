@@ -2,11 +2,10 @@ from __future__ import annotations
 
 """Utilities for planning routes for mobile sensors."""
 
-from typing import List, Dict, Tuple
+from typing import List, Dict
 
 import numpy as np
 from shapely.geometry import MultiPolygon, Point
-from shapely.ops import unary_union
 
 from .helpers import create_fan_polygon, get_grid_points_in_polygon_km
 
@@ -76,54 +75,73 @@ def plan_sensor_routes(
     """Plan routes for ``num_sensors`` starting and ending at ``depot``.
 
     The input ``scan_points`` list comes from :func:`select_scan_positions`.
-    Routes are solved using the OR-Tools vehicle routing solver.
-    The returned structure is a list of point sequences for each sensor.
+    A mixed integer program is solved with :mod:`pulp` to minimise total travel
+    distance while visiting each scan point exactly once.
+
+    Objective
+    ---------
+    Minimise the sum of travelled distances between consecutive waypoints.
+
+    Constraints
+    -----------
+    - Each scan point has exactly one incoming and one outgoing arc.
+    - Exactly ``num_sensors`` tours leave and return to the depot.
+    - Miller--Tucker--Zemlin constraints remove sub-tours.
     """
-    try:
-        from ortools.constraint_solver import pywrapcp, routing_enums_pb2
-    except Exception as exc:  # pragma: no cover - import failure
-        raise RuntimeError("OR-Tools is required for route planning") from exc
 
-    all_points = [depot] + [s["location"] for s in scan_points]
-    size = len(all_points)
-    dist_matrix = np.zeros((size, size))
-    for i in range(size):
-        for j in range(size):
-            if i == j:
-                dist = 0
-            else:
-                dist = _haversine_dist(all_points[i], all_points[j])
-            dist_matrix[i, j] = int(dist * 1000)  # metres as integer
+    import pulp
 
-    manager = pywrapcp.RoutingIndexManager(size, num_sensors, 0)
-    routing = pywrapcp.RoutingModel(manager)
+    points = [depot] + [s["location"] for s in scan_points]
+    n = len(points)
 
-    def distance_callback(from_index: int, to_index: int) -> int:
-        return int(dist_matrix[manager.IndexToNode(from_index)][manager.IndexToNode(to_index)])
+    # Pre-compute distances in kilometres
+    dist = [[_haversine_dist(points[i], points[j]) for j in range(n)] for i in range(n)]
 
-    transit_callback_index = routing.RegisterTransitCallback(distance_callback)
-    routing.SetArcCostEvaluatorOfAllVehicles(transit_callback_index)
+    prob = pulp.LpProblem("MTSP", pulp.LpMinimize)
+    x = pulp.LpVariable.dicts("x", (range(n), range(n)), cat="Binary")
+    u = pulp.LpVariable.dicts("u", range(1, n), lowBound=1, upBound=n - 1, cat="Integer")
 
-    for node in range(1, size):
-        routing.AddDisjunction([manager.NodeToIndex(node)], 100000)
+    # Objective function: sum over arcs of distance * decision
+    prob += pulp.lpSum(dist[i][j] * x[i][j] for i in range(n) for j in range(n))
 
-    search_parameters = pywrapcp.DefaultRoutingSearchParameters()
-    search_parameters.first_solution_strategy = routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC
-    search_parameters.local_search_metaheuristic = routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
-    search_parameters.time_limit.seconds = 10
+    # Each non-depot node has exactly one incoming and one outgoing arc
+    for k in range(1, n):
+        prob += pulp.lpSum(x[i][k] for i in range(n)) == 1
+        prob += pulp.lpSum(x[k][j] for j in range(n)) == 1
 
-    solution = routing.SolveWithParameters(search_parameters)
-    if solution is None:
-        raise RuntimeError("No route found")
+    # Depot has num_sensors outgoing and incoming arcs
+    prob += pulp.lpSum(x[0][j] for j in range(1, n)) == num_sensors
+    prob += pulp.lpSum(x[i][0] for i in range(1, n)) == num_sensors
 
+    # Prevent self-loops
+    for i in range(n):
+        prob += x[i][i] == 0
+
+    # MTZ sub-tour elimination
+    for i in range(1, n):
+        for j in range(1, n):
+            if i != j:
+                prob += u[i] - u[j] + (n - 1) * x[i][j] <= n - 2
+
+    solver = pulp.PULP_CBC_CMD(gapRel=0.01, timeLimit=60)
+    result_status = prob.solve(solver)
+    if pulp.LpStatus[result_status] != "Optimal":
+        raise RuntimeError("Route optimisation did not converge")
+
+    # Extract tours
     routes: List[List[Point]] = []
-    for v in range(num_sensors):
-        index = routing.Start(v)
-        tour: List[Point] = []
-        while not routing.IsEnd(index):
-            node = manager.IndexToNode(index)
-            tour.append(all_points[node])
-            index = solution.Value(routing.NextVar(index))
-        tour.append(depot)
+    successors = {i: j for i in range(n) for j in range(n) if pulp.value(x[i][j]) == 1}
+
+    for _ in range(num_sensors):
+        current = 0
+        tour = [depot]
+        while True:
+            nxt = successors[current]
+            if nxt == 0:
+                tour.append(depot)
+                break
+            tour.append(points[nxt])
+            current = nxt
         routes.append(tour)
+
     return routes
