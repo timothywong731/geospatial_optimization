@@ -1,13 +1,13 @@
 # Geospatial Optimization
 
-This package provides tools and algorithms for optimizing the placement of sensors in a geospatial area. It includes functionalities for defining operational areas, simulating sensor coverage, and visualizing the results.
+This package provides tools and algorithms for optimizing the placement of stationary sensors in a geospatial area. It includes functionalities for defining operational areas, simulating sensor coverage, and visualizing the results.
 
 ## Installation
 
 1.  Clone the repository:
 
     ```bash
-    git clone https://github.com/your_username/geospatial_optimization.git
+    git clone https://github.com/timothywong731/geospatial_optimization.git
     cd geospatial_optimization
     ```
 
