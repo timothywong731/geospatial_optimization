@@ -38,14 +38,20 @@ def optimize_sensor_placement(
     tuple[str, list[dict]]
         Solver status string and details of placed sensors.
     """
-    # Initialize the solver
+    # Initialize the default CBC solver
     # Tolerate a fractional gap of 1% for faster convergence
     # This can be adjusted based on problem size and complexity
     # Allow a maximum of 2 minutes for the solver to run
     solver = pulp.PULP_CBC_CMD(
         gapRel=0.01, 
         timeLimit=120,  # 2 minutes
+        warmStart=True,
     )
+
+    # Uncomment the following line to use IBM CPLEX
+    # Problem size is limited for Community Edition (Free)
+    # solver = pulp.CPLEX_PY()
+
 
     locations = get_grid_points_in_polygon_km(operational_area, resolution_km)
     num_locations = len(locations)
