@@ -112,6 +112,8 @@ def plot_sensor_map(
 def plot_sensor_routes(
     operational_area: MultiPolygon,
     routes: List[List[Point]],
+    sensor_config: Dict | None = None,
+    fan_opacity: float = 0.3,
     ax: plt.Axes | None = None,
 ) -> plt.Axes:
     """Visualise mobile sensor routes on a geographical map.
@@ -122,6 +124,12 @@ def plot_sensor_routes(
         Operational boundary to plot.
     routes : list[list[Point]]
         Output from :func:`plan_sensor_routes`.
+    sensor_config : dict, optional
+        Sensor parameters describing the coverage wedge to draw at each scan
+        position. If ``None`` only the routes are shown.
+    fan_opacity : float, optional
+        Transparency applied to each coverage wedge when ``sensor_config`` is
+        provided.
     ax : matplotlib.axes.Axes, optional
         Existing axes to draw on.  If ``None`` a new figure is created.
 
@@ -177,6 +185,26 @@ def plot_sensor_routes(
         y = [pt.y for pt in route]
         mx, my = m(x, y)
         ax.plot(mx, my, marker="o", label=f"Sensor {idx + 1}")
+
+        if sensor_config is not None:
+            for pt in route[1:-1]:
+                fan_poly = create_fan_polygon(
+                    pt.x,
+                    pt.y,
+                    sensor_config["range_km"],
+                    sensor_config["azimuth_degree"],
+                    sensor_config["fan_degree"],
+                )
+                fx, fy = fan_poly.exterior.xy
+                fmx, fmy = m(fx, fy)
+                patch = plt.Polygon(
+                    list(zip(fmx, fmy)),
+                    alpha=fan_opacity,
+                    facecolor="red",
+                    edgecolor="darkred",
+                    linewidth=1,
+                )
+                ax.add_patch(patch)
 
     ax.legend(loc="upper right")
     ax.set_title("Planned Sensor Routes")
