@@ -28,15 +28,25 @@ def optimize_sensor_placement(
     max_sensors : int, optional
         Maximum number of sensors that may be placed.
     coverage_requirement : float, optional
-        Fraction of sampled points that must be covered.
+        Fraction of sampled points that must be covered. Default value is 0.8 (80%).
     encourage_overlapping : float, optional
-        Weight applied to overlapping coverage in the objective.
+        Weight applied to overlapping coverage in the objective. This is a numeric value between 0.0-1.0. 
+        A value of 0.0 means no encouragement. For overlapping coverage, and 1.0 means strong encouragement. 
 
     Returns
     -------
     tuple[str, list[dict]]
         Solver status string and details of placed sensors.
     """
+    # Initialize the solver
+    # Tolerate a fractional gap of 1% for faster convergence
+    # This can be adjusted based on problem size and complexity
+    # Allow a maximum of 2 minutes for the solver to run
+    solver = pulp.PULP_CBC_CMD(
+        gapRel=0.01, 
+        timeLimit=120,  # 2 minutes
+    )
+
     locations = get_grid_points_in_polygon_km(operational_area, resolution_km)
     num_locations = len(locations)
     num_configs = len(configurations)
@@ -91,7 +101,7 @@ def optimize_sensor_placement(
     for l in range(num_locations):
         prob += pulp.lpSum(x[l][j] for j in range(num_configs)) <= 1
 
-    prob.solve()
+    prob.solve(solver)
 
     placed_sensors_info: List[Dict] = []
     for l in range(num_locations):
