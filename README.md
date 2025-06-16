@@ -43,6 +43,10 @@ A demonstration of how to use the library is provided in the `demo.ipynb` Jupyte
 ### Key Modules:
 
 -   `geospatial_optimization.optimization`: Contains the core optimization algorithms for sensor placement.
--   `geospatial_optimization.plotting`: Provides functions for visualizing operational areas, sensor placements, and coverage.
+ -   `geospatial_optimization.plotting`: Provides functions for visualizing operational areas, sensor placements, coverage, and mobile sensor routes. The route plot can optionally display the fan-shaped detection areas along each path.
 -   `geospatial_optimization.helpers`: Includes utility functions used across the project.
+ -   `geospatial_optimization.mobile_optimization`: Tools for selecting scanning
+     positions and planning routes for moving sensors. Each sensor has its own depot
+     and routes stay within the operational area. See `mobile_demo.ipynb`
+     for a short example of planning and visualising routes.
 
