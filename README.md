@@ -45,4 +45,7 @@ A demonstration of how to use the library is provided in the `demo.ipynb` Jupyte
 -   `geospatial_optimization.optimization`: Contains the core optimization algorithms for sensor placement.
 -   `geospatial_optimization.plotting`: Provides functions for visualizing operational areas, sensor placements, and coverage.
 -   `geospatial_optimization.helpers`: Includes utility functions used across the project.
+-   `geospatial_optimization.mobile_optimization`: Tools for selecting scanning
+    positions and planning routes for moving sensors. See `mobile_demo.ipynb`
+    for a short example.
 
