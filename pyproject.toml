@@ -15,7 +15,6 @@ basemap = "^2.0.0"
 basemap-data = "^2.0.0"
 pyproj = "^3.7.1"
 netcdf4 = "^1.7.2"
-cplex = "^22.1.2.0"
 
 
 [tool.poetry.group.dev.dependencies]
