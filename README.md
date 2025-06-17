@@ -35,7 +35,8 @@ Cats can be configured with various properties, such as sensing range and azimut
 ---
 The mathematical problem formulation is shown below:
 
-$$
+
+```math
 \begin{aligned}
   & \text{Let} & 
       I         & = \text{No. of target locations} \\
@@ -95,8 +96,7 @@ $$
 
   
 \end{aligned}
-$$
-
+```
 
 
 ## Installation
