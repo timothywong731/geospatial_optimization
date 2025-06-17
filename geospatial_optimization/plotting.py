@@ -12,6 +12,7 @@ def plot_sensor_map(
     operational_area: MultiPolygon,
     placed_sensors: List[Dict],
     fan_opacity: float = 0.5,
+    plot_margin: float = 0.0,
     ax: plt.Axes | None = None,
 ) -> plt.Axes:
     """Visualise the optimisation outcome on a geographical map.
@@ -40,8 +41,6 @@ def plot_sensor_map(
     max_px = max(max(poly.exterior.xy[0]) for poly in operational_area.geoms)
     max_py = max(max(poly.exterior.xy[1]) for poly in operational_area.geoms)
 
-    plot_margin = 3
-
     m = Basemap(
         projection="merc",
         llcrnrlon=min_px - plot_margin,
@@ -52,17 +51,22 @@ def plot_sensor_map(
         ax=ax,
     )
 
-    # Get topography for nice background
-    url = "http://ferret.pmel.noaa.gov/thredds/dodsC/data/PMEL/etopo5.nc"
-    etopodata = Dataset(url)
-    topoin = etopodata.variables["ROSE"][:]
-    lons = etopodata.variables["ETOPO05_X"][:]
-    lats = etopodata.variables["ETOPO05_Y"][:]
-    topoin, lons = shiftgrid(180.0, topoin, lons, start=False)
-    nx = int((m.xmax - m.xmin) / 10000.0) + 1
-    ny = int((m.ymax - m.ymin) / 10000.0) + 1
-    topodat = m.transform_scalar(topoin, lons, lats, nx, ny)
-    m.imshow(topodat, cm.GMT_haxby)
+    # Get topography for nice background, only if area is large enough
+    try:
+        url = "http://ferret.pmel.noaa.gov/thredds/dodsC/data/PMEL/etopo5.nc"
+        etopodata = Dataset(url)
+        topoin = etopodata.variables["ROSE"][:]
+        lons = etopodata.variables["ETOPO05_X"][:]
+        lats = etopodata.variables["ETOPO05_Y"][:]
+        topoin, lons = shiftgrid(180.0, topoin, lons, start=False)
+        nx = max(2, int((m.xmax - m.xmin) / 10000.0) + 1)
+        ny = max(2, int((m.ymax - m.ymin) / 10000.0) + 1)
+        if nx > 1 and ny > 1:
+            topodat = m.transform_scalar(topoin, lons, lats, nx, ny)
+            m.imshow(topodat, cm.GMT_haxby)
+    except Exception as e:
+        # If any error occurs (e.g., area too small, network error), skip background
+        pass
 
     m.drawcoastlines()
     m.drawcountries()
